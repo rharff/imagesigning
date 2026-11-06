@@ -8,8 +8,8 @@ and provides an ORAS registry implementation.
 
 - `Resolve(ctx, ref)` returns the immutable image digest and lowercase
   repository name.
-- `PushSignature(ctx, repo, subjectDigest, payload, sigB64)` stores a signature
-  for the image identified by `subjectDigest`.
+- `PushSignature(ctx, repo, subjectDigest, payload, sigB64, algorithm)` stores
+  a signature for the image identified by `subjectDigest`.
 - `ListSignatures(ctx, repo, subjectDigest)` returns all candidate referrers.
 
 `Candidate.Foreign` marks a referrer that exists but does not use the imgsign
@@ -23,6 +23,7 @@ signature format. This distinction lets the verifier report
 - Artifact type: `application/vnd.imgsign.signature.v1`
 - Payload media type: `application/vnd.imgsign.payload.v1+json`
 - Signature annotation: `io.imgsign.signature`
+- Algorithm annotation: `io.imgsign.algorithm`
 
 The payload is pushed as a layer. The base64 signature is stored as that
 layer's annotation, and an OCI manifest points to the signed image through its

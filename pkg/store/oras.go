@@ -3,6 +3,7 @@ package store
 import (
 	"bytes"
 	"context"
+	"encoding/base64"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -38,6 +39,7 @@ func (s *ORASStore) repository(ref string) (*remote.Repository, registry.Referen
 	if err != nil {
 		return nil, parsed, err
 	}
+	r.SkipReferrersGC = true
 	if user, token := os.Getenv("GHCR_USER"), os.Getenv("GHCR_TOKEN"); user != "" && token != "" {
 		r.Client = &auth.Client{Client: http.DefaultClient, Credential: auth.StaticCredential(parsed.Registry, auth.Credential{Username: user, Password: token})}
 	} else if dockerStore, err := credentials.NewStoreFromDocker(credentials.StoreOptions{}); err == nil {
@@ -59,12 +61,12 @@ func (s *ORASStore) Resolve(ctx context.Context, ref string) (string, string, er
 	return desc.Digest.String(), strings.ToLower(parsed.Registry + "/" + parsed.Repository), nil
 }
 
-func (s *ORASStore) PushSignature(ctx context.Context, repoName, subjectDigest string, raw []byte, sigB64 string) error {
+func (s *ORASStore) PushSignature(ctx context.Context, repoName, subjectDigest string, raw []byte, sigB64, algorithm string) error {
 	r, _, err := s.repository(repoName)
 	if err != nil {
 		return err
 	}
-	payloadDesc := ocispec.Descriptor{MediaType: PayloadMediaType, Digest: digest.FromBytes(raw), Size: int64(len(raw)), Annotations: map[string]string{SignatureAnnotation: sigB64}}
+	payloadDesc := ocispec.Descriptor{MediaType: PayloadMediaType, Digest: digest.FromBytes(raw), Size: int64(len(raw)), Annotations: map[string]string{SignatureAnnotation: sigB64, AlgorithmAnnotation: algorithm}}
 	if err := r.Push(ctx, payloadDesc, bytes.NewReader(raw)); err != nil {
 		return fmt.Errorf("push payload: %w", err)
 	}
@@ -134,7 +136,13 @@ func (s *ORASStore) ListSignatures(ctx context.Context, repoName, subjectDigest 
 		if err != nil {
 			continue
 		}
-		result = append(result, Candidate{Payload: payload, SigB64: layer.Annotations[SignatureAnnotation]})
+		sigB64 := layer.Annotations[SignatureAnnotation]
+		sigRaw, _ := base64.StdEncoding.DecodeString(sigB64)
+		result = append(result, Candidate{
+			Payload: payload, SigB64: sigB64, Algorithm: layer.Annotations[AlgorithmAnnotation],
+			ManifestBytes: desc.Size, ConfigBytes: manifest.Config.Size, LayerBytes: layer.Size,
+			SignatureRawBytes: len(sigRaw), SignatureBase64Bytes: len(sigB64),
+		})
 	}
 	return result, nil
 }

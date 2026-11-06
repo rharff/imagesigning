@@ -1,7 +1,7 @@
 # PRD: Custom Image Signer + Verifier (`imgsign`)
 
 ## 1. Tujuan
-Menandatangani digest container image dengan ECDSA P-256 dan menyimpan
+Menandatangani digest container image dengan ECDSA P-256 atau ML-DSA-65 dan menyimpan
 signature di GHCR sebagai OCI 1.1 referrer dari image tersebut. Verifier
 mengambil signature dari GHCR dan memverifikasinya dengan public key.
 Dibangun sebagai library Go + CLI. Verifier harus berupa package terpisah
@@ -23,6 +23,7 @@ multi-signature, metrik internal (benchmark diukur dari luar).
 - Go (versi stabil terbaru). Tanpa implementasi kripto sendiri.
 - stdlib: `crypto/ecdsa`, `crypto/elliptic`, `crypto/sha256`, `crypto/x509`,
   `encoding/pem`, `encoding/json`.
+- `github.com/cloudflare/circl/sign/mldsa/mldsa65` untuk ML-DSA-65.
 - `oras.land/oras-go/v2` untuk semua operasi registry (resolve, push
   manifest ber-subject, list referrers dengan fallback otomatis ke
   referrers tag schema).
@@ -61,7 +62,8 @@ type Candidate struct {
 ## 6. Keputusan Desain
 
 ### 6.1 Kunci
-- ECDSA P-256. Private key PEM (PKCS#8), public key PEM (PKIX).
+- ECDSA P-256 atau ML-DSA-65. Default tetap ECDSA. Tipe key ditentukan saat
+  `keygen` dan harus sama dengan `--alg` saat `sign` atau `verify`.
 - `keygen` menulis `priv.pem` (mode 0600) dan `pub.pem`; menolak menimpa
   file yang sudah ada.
 - `sign` membaca private key dari `--key <path>` atau env
@@ -71,14 +73,14 @@ type Candidate struct {
 ### 6.2 Payload
 JSON, urutan field tetap, tanpa whitespace, dibangun dengan serialisasi
 manual atau struct berurutan (bukan map):
-{"v":1,"repo":"ghcr.io/owner/app","digest":"sha256:<hex>","iat":1730000000}
+{"v":2,"alg":"ecdsa","repo":"ghcr.io/owner/app","digest":"sha256:<hex>","iat":1730000000}
 - `repo` dan `digest` wajib. Repo ditulis lowercase tanpa tag dan tanpa
   digest. Ini mengikat signature ke repository dan digest.
 - `iat` hanya metadata, tidak divalidasi.
 - Bytes yang ditandatangani: `"imgsign.v1\n" + payloadJSON`
   (domain separation).
-- Signature: `ecdsa.SignASN1` atas SHA-256 dari bytes tersebut (DER),
-  disimpan base64 standar.
+- Signature ECDSA memakai `ecdsa.SignASN1` atas SHA-256; ML-DSA-65 memakai
+  format native ML-DSA. Keduanya disimpan base64 standar.
 - Verifier memverifikasi terhadap bytes layer persis seperti tersimpan,
   TIDAK re-serialisasi hasil parse. Setelah signature lolos baru payload
   di-parse.
@@ -130,15 +132,16 @@ Referrer palsu dari penyerang diabaikan karena tidak lolos public key.
 Exit code CLI:
 - 0 = valid
 - 1 = ditolak (cetak `REJECT <kode>` ke stderr; kode: `no_signature`,
-  `bad_signature`, `digest_mismatch`, `repo_mismatch`)
+  `bad_signature`, `algorithm_mismatch`, `digest_mismatch`, `repo_mismatch`)
 - 2 = error operasional (jaringan, auth, argumen, key tidak terbaca).
   Error operasional TIDAK BOLEH dianggap valid.
 
 ## 9. CLI
 ```
-imgsign keygen --out-dir ./keys
-imgsign sign   --key priv.pem <image-ref>
-imgsign verify --pub pub.pem  <image-ref>
+imgsign keygen --alg ecdsa --out-dir ./keys
+imgsign keygen --alg mldsa65 --out-dir ./keys-mldsa
+imgsign sign   --alg ecdsa --key priv.pem <image-ref>
+imgsign verify --alg ecdsa --pub pub.pem  <image-ref>
 ```
 
 ## 10. Pengujian

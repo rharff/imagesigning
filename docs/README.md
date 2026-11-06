@@ -1,7 +1,7 @@
 # imgsign
 
 `imgsign` adalah library Go dan CLI untuk menandatangani digest container
-image menggunakan ECDSA P-256. Signature disimpan sebagai OCI 1.1 referrer,
+image menggunakan ECDSA P-256 atau ML-DSA-65. Signature disimpan sebagai OCI 1.1 referrer,
 bukan sebagai tag `.sig`, sehingga verifier selalu menemukan signature dari
 digest image yang sedang diperiksa.
 
@@ -11,14 +11,32 @@ digest image yang sedang diperiksa.
 go build -o imgsign ./cmd/imgsign
 ```
 
+## Bantuan CLI
+
+Tampilkan semua command dan contoh penggunaan:
+
+```bash
+./imgsign -h
+```
+
+Untuk melihat flag command tertentu:
+
+```bash
+./imgsign keygen -h
+./imgsign sign -h
+./imgsign verify -h
+./imgsign verify-detail -h
+```
+
 ## Membuat keypair
 
 ```bash
-./imgsign keygen --out-dir ./keys
+./imgsign keygen --alg ecdsa --out-dir ./keys
 ```
 
-Perintah ini membuat `keys/priv.pem` (PKCS#8, permission 0600) dan
-`keys/pub.pem` (PKIX). File yang sudah ada tidak ditimpa.
+Gunakan `--alg mldsa65` untuk ML-DSA-65. Perintah ini membuat `priv.pem`
+dan `pub.pem` dengan format PEM sesuai algoritmanya. File yang sudah ada
+tidak ditimpa.
 
 ## Konfigurasi registry
 
@@ -43,8 +61,12 @@ program mencoba credential store Docker.
 Private key dapat diberikan sebagai path:
 
 ```bash
-./imgsign sign --key ./keys/priv.pem ghcr.io/owner/app:latest
+./imgsign sign --alg ecdsa --key ./keys/priv.pem ghcr.io/owner/app:latest
 ```
+
+Flag `--alg` default-nya `ecdsa`. Algoritma pada flag harus sama dengan
+algoritma key. Contoh, key ECDSA dengan `--alg mldsa65` ditolak dengan error
+`algorithm mismatch: private key is ecdsa, but signing requested mldsa65`.
 
 Untuk CI yang menyediakan isi PEM melalui environment, `IMGSIGN_PRIVATE_KEY`
 boleh berisi langsung isi PEM (atau path file PEM). Contoh aman:
@@ -66,8 +88,28 @@ signed ghcr.io/owner/app@sha256:...
 ## Verify
 
 ```bash
-./imgsign verify --pub ./keys/pub.pem ghcr.io/owner/app:latest
+./imgsign verify --alg ecdsa --pub ./keys/pub.pem ghcr.io/owner/app:latest
 ```
+
+Untuk mengumpulkan metrik tanpa mengubah command `verify`, gunakan command
+terpisah berikut:
+
+```bash
+./imgsign verify-detail --alg ecdsa --pub ./keys/pub.pem ghcr.io/owner/app:latest
+```
+
+Output berupa JSON dan mencakup ukuran public key, payload, signature raw dan
+base64, manifest/config/layer OCI, jumlah serta status candidate, dan durasi
+resolve/list/verifikasi. Ukuran private key dapat dicatat tanpa mencetak
+isinya dengan flag opsional:
+
+```bash
+./imgsign verify-detail --alg ecdsa --pub ./keys/pub.pem \
+  --priv ./keys/priv.pem ghcr.io/owner/app:latest
+```
+
+`verify-detail` mempertahankan exit code validasi: `0` untuk valid, `1` untuk
+rejection, dan `2` untuk error operasional.
 
 Verifier meresolve tag ke digest terlebih dahulu, mengambil referrer dengan
 `artifactType` milik imgsign, lalu memverifikasi bytes layer persis seperti
@@ -78,6 +120,7 @@ exit code 1:
 - `unsupported_signature`: terdapat referrer signature, tetapi formatnya bukan
   imgsign, misalnya signature Cosign
 - `bad_signature`: tidak ada signature yang lolos verifikasi public key
+- `algorithm_mismatch`: signature memakai algoritma berbeda dari `--alg`
 - `digest_mismatch`: payload menunjuk digest berbeda
 - `repo_mismatch`: payload menunjuk repository berbeda
 
@@ -90,7 +133,7 @@ Package `pkg/verifier` tidak bergantung pada implementasi registry. Integrasi
 lain dapat menyediakan `store.Store` sendiri:
 
 ```go
-err := verifier.Verify(ctx, myStore, publicKey, imageRef)
+err := verifier.Verify(ctx, myStore, publicKey, keys.ECDSA, imageRef)
 ```
 
 Package utama:

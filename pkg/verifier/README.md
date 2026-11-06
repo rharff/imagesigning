@@ -5,13 +5,13 @@ It is registry-agnostic and only depends on the `store.Store` interface.
 
 ## Verification flow
 
-`Verify(ctx, store, publicKey, ref)`:
+`Verify(ctx, store, publicKey, algorithm, ref)`:
 
 1. Resolves the reference to its current digest and canonical repository.
 2. Lists all referrer candidates for that digest.
 3. Ignores foreign signature formats.
-4. Decodes the base64 signature and verifies the ASN.1 ECDSA signature over
-   the domain-separated payload bytes.
+4. Decodes the base64 signature and verifies it with the selected algorithm
+   over the domain-separated payload bytes.
 5. Parses the payload and checks both its digest and repository.
 6. Returns `nil` after the first candidate that passes every check.
 

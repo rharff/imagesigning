@@ -2,13 +2,10 @@ package verifier
 
 import (
 	"context"
-	"crypto/ecdsa"
-	"crypto/sha256"
-	"encoding/base64"
 	"errors"
 	"fmt"
 
-	"imgsign/pkg/payload"
+	"imgsign/pkg/keys"
 	"imgsign/pkg/store"
 )
 
@@ -17,6 +14,7 @@ const (
 	BadSignature         = "bad_signature"
 	DigestMismatch       = "digest_mismatch"
 	RepoMismatch         = "repo_mismatch"
+	AlgorithmMismatch    = "algorithm_mismatch"
 	UnsupportedSignature = "unsupported_signature"
 )
 
@@ -24,7 +22,13 @@ type Rejection struct{ Code string }
 
 func (e *Rejection) Error() string { return e.Code }
 
-func Verify(ctx context.Context, s store.Store, key *ecdsa.PublicKey, ref string) error {
+func Verify(ctx context.Context, s store.Store, key keys.PublicKey, algorithm string, ref string) error {
+	if key == nil {
+		return errors.New("public key is required")
+	}
+	if key.Algorithm() != algorithm {
+		return fmt.Errorf("algorithm mismatch: public key is %s, but verification requested %s", key.Algorithm(), algorithm)
+	}
 	digest, repo, err := s.Resolve(ctx, ref)
 	if err != nil {
 		return err
@@ -33,42 +37,7 @@ func Verify(ctx context.Context, s store.Store, key *ecdsa.PublicKey, ref string
 	if err != nil {
 		return err
 	}
-	if len(candidates) == 0 {
-		return &Rejection{NoSignature}
-	}
-	hasImgSignCandidate := false
-	for _, c := range candidates {
-		if c.Foreign {
-			continue
-		}
-		hasImgSignCandidate = true
-		if len(c.Payload) > 4096 {
-			continue
-		}
-		sig, err := base64.StdEncoding.DecodeString(c.SigB64)
-		if err != nil {
-			continue
-		}
-		sum := sha256.Sum256(payload.SigningBytes(c.Payload))
-		if !ecdsa.VerifyASN1(key, sum[:], sig) {
-			continue
-		}
-		p, err := payload.Parse(c.Payload)
-		if err != nil {
-			return &Rejection{BadSignature}
-		}
-		if p.Digest != digest {
-			return &Rejection{DigestMismatch}
-		}
-		if p.Repo != repo {
-			return &Rejection{RepoMismatch}
-		}
-		return nil
-	}
-	if !hasImgSignCandidate {
-		return &Rejection{UnsupportedSignature}
-	}
-	return &Rejection{BadSignature}
+	return VerifyCandidates(key, algorithm, repo, digest, candidates)
 }
 
 func Code(err error) string {

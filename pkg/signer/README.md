@@ -1,18 +1,19 @@
 # `signer`
 
-The `signer` package coordinates image resolution, payload creation, ECDSA
-signing, and signature storage. It does not know how a registry works; that
+The `signer` package coordinates image resolution, payload creation, ECDSA or
+ML-DSA-65 signing, and signature storage. It does not know how a registry works; that
 responsibility belongs to the `store.Store` implementation.
 
 ## Signing flow
 
-`Sign(ctx, store, privateKey, ref, now)` performs these steps:
+`Sign(ctx, store, privateKey, algorithm, ref, now)` performs these steps:
 
 1. Resolves `ref` (for example, `ghcr.io/acme/app:latest`) to an immutable
    digest and canonical repository name.
 2. Builds a version 1 payload containing the repository, digest, and `now`.
-3. Marshals the payload and hashes the domain-separated bytes with SHA-256.
-4. Creates an ASN.1 DER ECDSA signature using the supplied P-256 private key.
+3. Marshals the payload and signs the domain-separated bytes with the selected
+   algorithm.
+4. Creates an algorithm-specific signature using the supplied private key.
 5. Base64-encodes the signature and calls `PushSignature`.
 6. Returns `repo@digest` for the signed image.
 
@@ -20,7 +21,7 @@ responsibility belongs to the `store.Store` implementation.
 signedRef, err := signer.Sign(
     ctx,
     store.NewORASStore(),
-    privateKey,
+    privateKey, keys.ECDSA,
     "ghcr.io/acme/app:latest",
     time.Now(),
 )

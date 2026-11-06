@@ -1,12 +1,14 @@
 # `keys`
 
-The `keys` package creates and reads the ECDSA P-256 key pair used by
-`imgsign`. Private keys are encoded as PKCS#8 inside PEM, while public keys
-are encoded as PKIX inside PEM.
+The `keys` package creates and reads ECDSA P-256 and ML-DSA-65 key pairs used
+by `imgsign`. ECDSA keys use PKCS#8/PKIX PEM encoding. ML-DSA-65 keys use
+binary key encodings inside algorithm-specific PEM blocks.
 
 ## Main functions
 
-- `Generate()` creates a new ECDSA P-256 private key.
+- `Generate()` creates a new ECDSA P-256 private key (the default).
+- `GenerateAlgorithm("ecdsa")` or `GenerateAlgorithm("mldsa65")` selects the
+  key algorithm explicitly.
 - `SavePair(dir, privateKey)` writes `priv.pem` and `pub.pem`. The directory
   is created with mode `0700`; the private key is written with mode `0600`.
   Existing files are never overwritten.
@@ -32,4 +34,6 @@ publicKey, err := keys.LoadPublic("./keys/pub.pem")
 ```
 
 Keep `priv.pem` secret. The public key can be distributed to systems that
-verify signatures.
+verify signatures. A private key's algorithm is detected from its PEM type;
+callers must use the same algorithm when signing or verification fails with
+an explicit algorithm mismatch error.

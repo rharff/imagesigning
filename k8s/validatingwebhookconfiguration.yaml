@@ -1,0 +1,32 @@
+apiVersion: admissionregistration.k8s.io/v1
+kind: ValidatingWebhookConfiguration
+metadata:
+  name: imgsign-verifier
+webhooks:
+  - name: imgsign.security.example
+    admissionReviewVersions:
+      - v1
+    sideEffects: None
+    failurePolicy: Fail
+    timeoutSeconds: 10
+    clientConfig:
+      service:
+        name: imgsign-verifier
+        namespace: security
+        path: /validate
+        port: 443
+      caBundle: REPLACE_WITH_BASE64_CA
+    namespaceSelector:
+      matchLabels:
+        imgsign-enforce: enabled
+    rules:
+      - apiGroups:
+          - ""
+        apiVersions:
+          - v1
+        operations:
+          - CREATE
+          - UPDATE
+        resources:
+          - pods
+        scope: Namespaced

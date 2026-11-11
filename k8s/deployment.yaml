@@ -1,0 +1,53 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: imgsign-verifier
+  namespace: security
+spec:
+  replicas: 2
+  selector:
+    matchLabels:
+      app: imgsign-verifier
+  template:
+    metadata:
+      labels:
+        app: imgsign-verifier
+    spec:
+      containers:
+        - name: verifier
+          image: imgsign-verifier:dev
+          imagePullPolicy: IfNotPresent
+          ports:
+            - name: https
+              containerPort: 8443
+          env:
+            - name: TLS_CERT_FILE
+              value: /tls/tls.crt
+            - name: TLS_KEY_FILE
+              value: /tls/tls.key
+            - name: IMGSIGN_PUBLIC_KEY_FILE
+              value: /keys/pub.pem
+            - name: GHCR_USER
+              valueFrom:
+                secretKeyRef:
+                  name: ghcr-credentials
+                  key: username
+            - name: GHCR_TOKEN
+              valueFrom:
+                secretKeyRef:
+                  name: ghcr-credentials
+                  key: token
+          volumeMounts:
+            - name: tls
+              mountPath: /tls
+              readOnly: true
+            - name: imgsign-public-key
+              mountPath: /keys
+              readOnly: true
+      volumes:
+        - name: tls
+          secret:
+            secretName: imgsign-verifier-tls
+        - name: imgsign-public-key
+          secret:
+            secretName: imgsign-public-key

@@ -1,0 +1,12 @@
+apiVersion: v1
+kind: Service
+metadata:
+  name: imgsign-verifier
+  namespace: security
+spec:
+  selector:
+    app: imgsign-verifier
+  ports:
+    - name: https
+      port: 443
+      targetPort: 8443

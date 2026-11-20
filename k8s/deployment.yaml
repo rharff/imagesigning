@@ -15,7 +15,7 @@ spec:
     spec:
       containers:
         - name: verifier
-          image: imgsign-verifier:dev
+          image: ghcr.io/rharff/imagesigning/verifier:1
           imagePullPolicy: IfNotPresent
           ports:
             - name: https

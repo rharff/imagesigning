@@ -1,5 +1,7 @@
 # Deploy verifier
 
+## Deploy
+
 Siapkan image `imgsign-verifier:dev` pada node/registry cluster, lalu buat
 namespace dan Secret:
 
@@ -37,3 +39,26 @@ kubectl label namespace <namespace> imgsign-enforce=enabled
 
 Manifest memvalidasi Pod pada operasi `CREATE` dan `UPDATE`, dan menggunakan
 `failurePolicy: Fail`.
+
+## Tombol nuklir
+
+Perintah berikut menghapus webhook dan seluruh resource verifier di namespace
+`security`. Jalankan hanya jika memang ingin mematikan enforcement dan
+membersihkan instalasi:
+
+```bash
+kubectl delete -f validatingwebhookconfiguration.yaml --ignore-not-found
+kubectl delete -f service.yaml --ignore-not-found
+kubectl delete -f deployment.yaml --ignore-not-found
+
+kubectl -n security delete secret imgsign-verifier-tls \
+  imgsign-public-key ghcr-credentials --ignore-not-found
+kubectl delete namespace security --ignore-not-found
+```
+
+Opsional: jika namespace target tetap dipertahankan dan label enforcement ingin
+dihapus, jalankan:
+
+```bash
+kubectl label namespace <namespace> imgsign-enforce-
+```

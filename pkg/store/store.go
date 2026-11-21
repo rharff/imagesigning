@@ -20,6 +20,7 @@ type Candidate struct {
 	ManifestBytes        int64
 	ConfigBytes          int64
 	LayerBytes           int64
+	IndexBytes           int64
 	SignatureRawBytes    int
 	SignatureBase64Bytes int
 	// Foreign marks a referrer that is not an imgsign signature format.

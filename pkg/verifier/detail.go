@@ -47,6 +47,8 @@ type CandidateMetrics struct {
 	ManifestBytes        int64  `json:"manifest_bytes"`
 	ConfigBytes          int64  `json:"config_bytes"`
 	LayerBytes           int64  `json:"layer_bytes"`
+	IndexBytes           int64  `json:"index_bytes"`
+	TotalArtifactBytes   int64  `json:"total_artifact_bytes"`
 	SignatureValid       bool   `json:"signature_valid"`
 }
 
@@ -100,7 +102,9 @@ func VerifyDetail(ctx context.Context, s store.Store, key keys.PublicKey, algori
 			PayloadJSONBytes: len(candidate.Payload), SigningBytes: len(payload.SigningBytes(candidate.Payload)),
 			SignatureRawBytes: len(rawSig), SignatureBase64Bytes: len(candidate.SigB64),
 			ManifestBytes: candidate.ManifestBytes, ConfigBytes: candidate.ConfigBytes, LayerBytes: candidate.LayerBytes,
+			IndexBytes: candidate.IndexBytes,
 		}
+		metric.TotalArtifactBytes = metric.ManifestBytes + metric.ConfigBytes + metric.LayerBytes + metric.IndexBytes
 		if decodeErr == nil && !candidate.Foreign && (candidate.Algorithm == "" || candidate.Algorithm == algorithm) {
 			metric.SignatureValid = key.Verify(payload.SigningBytes(candidate.Payload), rawSig)
 		}

@@ -9,6 +9,7 @@ import (
 	"strings"
 	"time"
 
+	"imgsign/pkg/experiment"
 	"imgsign/pkg/keys"
 	"imgsign/pkg/signer"
 	"imgsign/pkg/store"
@@ -33,6 +34,8 @@ func main() {
 		err = verify(os.Args[2:])
 	case "verify-detail":
 		err = verifyDetail(os.Args[2:])
+	case "copy-signature":
+		err = copySignature(os.Args[2:])
 	default:
 		usage()
 		os.Exit(2)
@@ -46,6 +49,23 @@ func main() {
 		fmt.Fprintf(os.Stderr, "ERROR %v\n", err)
 		os.Exit(2)
 	}
+}
+
+func copySignature(args []string) error {
+	fs := flag.NewFlagSet("copy-signature", flag.ContinueOnError)
+	from := fs.String("from", "", "source image reference")
+	to := fs.String("to", "", "destination image reference")
+	if err := fs.Parse(args); err != nil {
+		return err
+	}
+	if *from == "" || *to == "" || fs.NArg() != 0 {
+		return errors.New("--from and --to image references are required")
+	}
+	if err := experiment.CopySignature(context.Background(), store.NewORASStore(), *from, *to); err != nil {
+		return err
+	}
+	fmt.Printf("copied signature from %s to %s\n", *from, *to)
+	return nil
 }
 
 func keygen(args []string) error {
@@ -147,6 +167,7 @@ Commands:
   sign            Sign a container image
   verify          Verify an image signature
   verify-detail   Verify and print detailed metrics as JSON
+  copy-signature  Copy a signature artifact for testing mismatch scenarios
 
 Global options:
   -h, --help      Show this help
@@ -157,6 +178,7 @@ Examples:
   imgsign sign --alg ecdsa --key ./keys/priv.pem IMAGE
   imgsign verify --alg ecdsa --pub ./keys/pub.pem IMAGE
   imgsign verify-detail --alg ecdsa --pub ./keys/pub.pem IMAGE
+  imgsign copy-signature --from IMAGE_A --to IMAGE_B
 
 Run "imgsign <command> -h" for command-specific options.`)
 }

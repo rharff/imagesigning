@@ -94,6 +94,10 @@ func (s *ORASStore) ListSignatures(ctx context.Context, repoName, subjectDigest 
 		return nil, err
 	}
 	subject := ocispec.Descriptor{Digest: digest.Digest(subjectDigest)}
+	indexBytes, err := s.referrersIndexBytes(ctx, r, subjectDigest)
+	if err != nil {
+		indexBytes = 0
+	}
 	var descriptors []ocispec.Descriptor
 	if err := r.Referrers(ctx, subject, "", func(ds []ocispec.Descriptor) error { descriptors = append(descriptors, ds...); return nil }); err != nil {
 		return nil, fmt.Errorf("list referrers: %w", err)
@@ -114,21 +118,21 @@ func (s *ORASStore) ListSignatures(ctx context.Context, repoName, subjectDigest 
 			continue
 		}
 		if manifest.ArtifactType != SignatureArtifactType {
-			result = append(result, Candidate{Foreign: true})
+			result = append(result, Candidate{Foreign: true, IndexBytes: indexBytes})
 			continue
 		}
 		if len(manifest.Layers) == 0 {
-			result = append(result, Candidate{})
+			result = append(result, Candidate{IndexBytes: indexBytes})
 			continue
 		}
 		layer := manifest.Layers[0]
 		if layer.MediaType != PayloadMediaType {
-			result = append(result, Candidate{})
+			result = append(result, Candidate{IndexBytes: indexBytes})
 			continue
 		}
 		layerReader, err := r.Fetch(ctx, layer)
 		if err != nil {
-			result = append(result, Candidate{})
+			result = append(result, Candidate{IndexBytes: indexBytes})
 			continue
 		}
 		payload, err := io.ReadAll(io.LimitReader(layerReader, 4097))
@@ -141,8 +145,41 @@ func (s *ORASStore) ListSignatures(ctx context.Context, repoName, subjectDigest 
 		result = append(result, Candidate{
 			Payload: payload, SigB64: sigB64, Algorithm: layer.Annotations[AlgorithmAnnotation],
 			ManifestBytes: desc.Size, ConfigBytes: manifest.Config.Size, LayerBytes: layer.Size,
+			IndexBytes:        indexBytes,
 			SignatureRawBytes: len(sigRaw), SignatureBase64Bytes: len(sigB64),
 		})
 	}
 	return result, nil
+}
+
+func (s *ORASStore) referrersIndexBytes(ctx context.Context, r *remote.Repository, subjectDigest string) (int64, error) {
+	scheme := "https"
+	if r.PlainHTTP {
+		scheme = "http"
+	}
+	nativeURL := fmt.Sprintf("%s://%s/v2/%s/referrers/%s", scheme, r.Reference.Registry, r.Reference.Repository, subjectDigest)
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, nativeURL, nil)
+	if err != nil {
+		return 0, err
+	}
+	req.Header.Set("Accept", "application/vnd.oci.image.index.v1+json")
+	client := r.Client
+	if client == nil {
+		client = auth.DefaultClient
+	}
+	resp, err := client.Do(req)
+	if err != nil {
+		return 0, err
+	}
+	resp.Body.Close()
+	if resp.StatusCode >= 200 && resp.StatusCode < 300 {
+		return 0, nil
+	}
+
+	tag := strings.Replace(subjectDigest, ":", "-", 1)
+	desc, err := r.Resolve(ctx, tag)
+	if err != nil {
+		return 0, err
+	}
+	return desc.Size, nil
 }

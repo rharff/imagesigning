@@ -12,8 +12,12 @@ spec:
     securityContext:
       privileged: true
   - name: imgsign
-    image: ghcr.io/rharff/imagesigning/signer:latest
+    image: ghcr.io/rharff/imagesigning/signer:2
     command: ['sleep', 'infinity']
+    workingDir: /home/jenkins/agent
+    securityContext:
+      runAsUser: 1000
+      runAsGroup: 1000
 """
         }
     }
@@ -100,7 +104,7 @@ spec:
                                     usernameVariable: 'GHCR_USER',
                                     passwordVariable: 'GHCR_TOKEN'
                                 ),
-                                string(
+                                file(
                                     credentialsId: 'imgsign-private-key-mldsa',
                                     variable: 'IMGSIGN_PRIVATE_KEY'
                                 )

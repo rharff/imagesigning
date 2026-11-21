@@ -5,6 +5,8 @@ pipeline {
 apiVersion: v1
 kind: Pod
 spec:
+  imagePullSecrets:
+  - name: ghcr-pull
   containers:
   - name: buildah
     image: quay.io/buildah/stable:latest
@@ -12,8 +14,12 @@ spec:
     securityContext:
       privileged: true
   - name: imgsign
-    image: ghcr.io/rharff/imagesigning/signer:latest
+    image: ghcr.io/rharff/imagesigning/signer:2
     command: ['sleep', 'infinity']
+    workingDir: /home/jenkins/agent
+    securityContext:
+      runAsUser: 1000
+      runAsGroup: 1000
 """
         }
     }
@@ -100,7 +106,7 @@ spec:
                                     usernameVariable: 'GHCR_USER',
                                     passwordVariable: 'GHCR_TOKEN'
                                 ),
-                                string(
+                                file(
                                     credentialsId: 'imgsign-private-key',
                                     variable: 'IMGSIGN_PRIVATE_KEY'
                                 )

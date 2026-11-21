@@ -18,8 +18,8 @@ docker push ghcr.io/rharff/imagesigning/signer:latest
 docker push ghcr.io/rharff/imagesigning/verifier:latest
 
 # Tag & Push
-docker tag imgsign-signer:dev ghcr.io/rharff/imagesigning/signer:latest
-docker tag imgsign-verifier:dev ghcr.io/rharff/imagesigning/verifier:latest
+docker tag imgsign-signer:dev ghcr.io/rharff/imagesigning/signer:2
+docker tag imgsign-verifier:dev ghcr.io/rharff/imagesigning/verifier:2
 
-docker push ghcr.io/rharff/imagesigning/signer:latest
-docker push ghcr.io/rharff/imagesigning/verifier:latest
+docker push ghcr.io/rharff/imagesigning/signer:2
+docker push ghcr.io/rharff/imagesigning/verifier:2

@@ -13,9 +13,11 @@ spec:
       labels:
         app: imgsign-verifier
     spec:
+      imagePullSecrets:
+        - name: ghcr-pull
       containers:
         - name: verifier
-          image: ghcr.io/rharff/imagesigning/verifier:1
+          image: ghcr.io/rharff/imagesigning/verifier:2
           imagePullPolicy: IfNotPresent
           ports:
             - name: https

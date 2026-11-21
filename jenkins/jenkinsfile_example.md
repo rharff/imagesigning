@@ -3,7 +3,7 @@
 Contoh berikut mengasumsikan Jenkins agent memiliki Docker CLI dan akses ke
 Docker daemon. Credential `github-cred` adalah credential Jenkins tipe
 **Username with password** untuk GHCR, sedangkan `imgsign-private-key` adalah
-credential tipe **Secret text** yang berisi PEM private key.
+credential tipe **Secret file** yang berisi PEM private key.
 
 Pipeline membangun dan push image aplikasi terlebih dahulu. Digest hasil push
 kemudian dibentuk sebagai `repo@sha256:digest`, lalu dipakai oleh container
@@ -72,7 +72,7 @@ pipeline {
                         usernameVariable: 'GHCR_USER',
                         passwordVariable: 'GHCR_TOKEN'
                     ),
-                    string(
+                    file(
                         credentialsId: 'imgsign-private-key',
                         variable: 'IMGSIGN_PRIVATE_KEY'
                     )

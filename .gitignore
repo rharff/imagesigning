@@ -1,2 +1,4 @@
 /keys*/
 imgsign
+k8s/verifier.crt
+k8s/verifier.key

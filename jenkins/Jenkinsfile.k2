@@ -5,6 +5,8 @@ pipeline {
 apiVersion: v1
 kind: Pod
 spec:
+  imagePullSecrets:
+  - name: ghcr-pull
   containers:
   - name: buildah
     image: quay.io/buildah/stable:latest
@@ -28,90 +30,111 @@ spec:
         IMAGE_TAG  = "${BUILD_NUMBER}"
         IMAGE_FULL = "${IMAGE_NAME}:${IMAGE_TAG}"
         REPO_PATH  = "github.com/rharff/user-service.git"
+        MANIFEST_PATH = "k8s/deployment.yaml"
     }
 
     stages {
-        stage('Check Trigger') {
+        stage('Build Image') {
+            when { expression { env.SKIP_BUILD != 'true' } }
             steps {
-                script {
-                    def author = sh(
-                        script: 'git log -1 --pretty=%an',
-                        returnStdout: true
-                    ).trim()
+                container('buildah') {
+                    sh 'buildah build --label ci.build="$BUILD_NUMBER" -t "$IMAGE_FULL" .'
+                }
+            }
+        }
 
-                    if (author == 'Jenkins') {
-                        env.SKIP_BUILD = 'true'
-                        currentBuild.result = 'NOT_BUILT'
-                        echo "Commit terakhir dari Jenkins, pipeline dilewati."
-                    } else {
-                        env.SKIP_BUILD = 'false'
+        stage('Push & Get Digest') {
+            when { expression { env.SKIP_BUILD != 'true' } }
+            steps {
+                container('buildah') {
+                    withCredentials([usernamePassword(
+                        credentialsId: 'github-cred',
+                        usernameVariable: 'DOCKER_USER',
+                        passwordVariable: 'DOCKER_PASS'
+                    )]) {
+                        sh '''
+                            buildah push \
+                                --creds "$DOCKER_USER:$DOCKER_PASS" \
+                                --digestfile /tmp/image-digest \
+                                "$IMAGE_FULL" \
+                                "docker://$IMAGE_FULL"
+                        '''
+
+                        script {
+                            def digest = sh(
+                                script: 'cat /tmp/image-digest',
+                                returnStdout: true
+                            ).trim()
+
+                            if (!(digest ==~ /sha256:[0-9a-fA-F]{64}/)) {
+                                error("Failed to get valid digest, got: ${digest}")
+                            }
+
+                            env.IMAGE_REF = "${IMAGE_NAME}@${digest}"
+                            echo "IMAGE_REF set to: ${env.IMAGE_REF}"
+                        }
                     }
                 }
             }
         }
 
-        stage('Main Pipeline') {
+        stage('Sign') {
             when { expression { env.SKIP_BUILD != 'true' } }
-            stages {
-                stage('Build Image') {
-                    steps {
-                        container('buildah') {
-                            sh 'buildah build --label ci.build="$BUILD_NUMBER" -t "$IMAGE_FULL" .'
-                        }
+            steps {
+                container('imgsign') {
+                    withCredentials([
+                        usernamePassword(
+                            credentialsId: 'github-cred',
+                            usernameVariable: 'GHCR_USER',
+                            passwordVariable: 'GHCR_TOKEN'
+                        ),
+                        file(
+                            credentialsId: 'imgsign-private-key-mldsa',
+                            variable: 'IMGSIGN_PRIVATE_KEY'
+                        )
+                    ]) {
+                        sh 'imgsign sign --alg mldsa65 "$IMAGE_REF"'
                     }
                 }
+            }
+        }
 
-                stage('Push & Get Digest') {
-                    steps {
-                        container('buildah') {
-                            withCredentials([usernamePassword(
-                                credentialsId: 'github-cred',
-                                usernameVariable: 'DOCKER_USER',
-                                passwordVariable: 'DOCKER_PASS'
-                            )]) {
-                                sh '''
-                                    buildah push \
-                                        --creds "$DOCKER_USER:$DOCKER_PASS" \
-                                        --digestfile /tmp/image-digest \
-                                        "$IMAGE_FULL" \
-                                        "docker://$IMAGE_FULL"
-                                '''
+        stage('Update Deployment Manifest') {
+            when { expression { env.SKIP_BUILD != 'true' } }
+            steps {
+                container('buildah') {
+                    withCredentials([usernamePassword(
+                        credentialsId: 'github-cred',
+                        usernameVariable: 'GIT_USER',
+                        passwordVariable: 'GIT_TOKEN'
+                    )]) {
+                        sh '''
+                            set -e
 
-                                script {
-                                    def digest = sh(
-                                        script: 'cat /tmp/image-digest',
-                                        returnStdout: true
-                                    ).trim()
+                            test -f "$MANIFEST_PATH"
 
-                                    if (!digest?.startsWith("sha256:")) {
-                                        error("Failed to get valid digest, got: ${digest}")
-                                    }
+                            sed -i -E \
+                                "s#^([[:space:]]*image:[[:space:]]*).*user-service.*#\\1${IMAGE_REF}#" \
+                                "$MANIFEST_PATH"
 
-                                    env.IMAGE_REF = "${IMAGE_NAME}@${digest}"
-                                    echo "IMAGE_REF set to: ${env.IMAGE_REF}"
-                                }
-                            }
-                        }
-                    }
-                }
+                            grep -Fq "image: ${IMAGE_REF}" "$MANIFEST_PATH"
 
-                stage('Sign') {
-                    steps {
-                        container('imgsign') {
-                            withCredentials([
-                                usernamePassword(
-                                    credentialsId: 'github-cred',
-                                    usernameVariable: 'GHCR_USER',
-                                    passwordVariable: 'GHCR_TOKEN'
-                                ),
-                                file(
-                                    credentialsId: 'imgsign-private-key-mldsa',
-                                    variable: 'IMGSIGN_PRIVATE_KEY'
-                                )
-                            ]) {
-                                sh 'imgsign sign --alg mldsa65 "$IMAGE_REF"'
-                            }
-                        }
+                            export HOME=/tmp
+                            git config --global --add safe.directory "$WORKSPACE"
+                            git config user.name "Jenkins"
+                            git config user.email "jenkins@localhost"
+
+                            if git diff --quiet -- "$MANIFEST_PATH"; then
+                                echo "Manifest sudah menggunakan ${IMAGE_REF}"
+                                exit 0
+                            fi
+
+                            git add "$MANIFEST_PATH"
+                            git commit -m "Update user-service image to ${IMAGE_REF} [skip ci]"
+
+                            git remote set-url origin "https://${GIT_USER}:${GIT_TOKEN}@${REPO_PATH}"
+                            git push origin HEAD:main
+                        '''
                     }
                 }
             }
@@ -124,9 +147,6 @@ spec:
         }
         failure {
             echo "Pipeline gagal."
-        }
-        always {
-            deleteDir()
         }
     }
 }

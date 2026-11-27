@@ -82,4 +82,6 @@ Verifier menulis satu JSON object per keputusan ke stdout:
 
 Gunakan log collector Kubernetes atau `kubectl logs` untuk membacanya. Field
 `image`, `decision`, dan `reason` dapat dipakai untuk audit; token dan public
-key tidak pernah ditulis.
+key tidak pernah ditulis. `duration_ms` mengukur waktu sejak handler mulai
+menangani AdmissionReview hingga seluruh image selesai diperiksa. Semua log
+image dari AdmissionReview yang sama melaporkan durasi total yang sama.

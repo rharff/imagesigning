@@ -86,7 +86,14 @@ type decisionLog struct {
 	DurationMS int64  `json:"duration_ms"`
 }
 
+type imageDecision struct {
+	image    string
+	decision string
+	reason   string
+}
+
 func (h *verifierHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
+	requestStart := time.Now()
 	if r.Method != http.MethodPost {
 		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
 		return
@@ -94,29 +101,29 @@ func (h *verifierHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 
 	var review admissionReview
 	if err := json.NewDecoder(io.LimitReader(r.Body, 1<<20)).Decode(&review); err != nil {
-		h.logDecision("", "", "", "deny", "malformed_review", 0)
+		h.logDecision("", "", "", "deny", "malformed_review", time.Since(requestStart))
 		h.writeResponse(w, "", false, "malformed_review", "invalid AdmissionReview JSON")
 		return
 	}
 	if review.APIVersion != "admission.k8s.io/v1" || review.Kind != "AdmissionReview" {
-		h.logDecision("", "", "", "deny", "malformed_review", 0)
+		h.logDecision("", "", "", "deny", "malformed_review", time.Since(requestStart))
 		h.writeResponse(w, "", false, "malformed_review", "AdmissionReview v1 is required")
 		return
 	}
 	if review.Request == nil {
-		h.logDecision("", "", "", "deny", "malformed_review", 0)
+		h.logDecision("", "", "", "deny", "malformed_review", time.Since(requestStart))
 		h.writeResponse(w, "", false, "malformed_review", "AdmissionReview request is required")
 		return
 	}
 	if review.Request.Object == nil {
-		h.logDecision(review.Request.Namespace, "", "", "deny", "malformed_review", 0)
+		h.logDecision(review.Request.Namespace, "", "", "deny", "malformed_review", time.Since(requestStart))
 		h.writeResponse(w, review.Request.UID, false, "malformed_review", "AdmissionReview object is required")
 		return
 	}
 
 	var p pod
 	if err := json.Unmarshal(review.Request.Object, &p); err != nil || p.Kind != "Pod" {
-		h.logDecision(review.Request.Namespace, "", "", "deny", "malformed_review", 0)
+		h.logDecision(review.Request.Namespace, "", "", "deny", "malformed_review", time.Since(requestStart))
 		h.writeResponse(w, review.Request.UID, false, "malformed_review", "AdmissionReview object must be a Pod")
 		return
 	}
@@ -126,8 +133,9 @@ func (h *verifierHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		namespace = p.Metadata.Namespace
 	}
 	images := podImages(p)
+	decisions := make([]imageDecision, 0, len(images))
+	var rejectedImage, rejectionReason string
 	for _, image := range images {
-		start := time.Now()
 		reason := "valid"
 		decision := "allow"
 		if !imageDigestPattern.MatchString(image) {
@@ -142,11 +150,27 @@ func (h *verifierHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 				decision = "deny"
 			}
 		}
-		h.logDecision(namespace, p.Metadata.Name, image, decision, reason, time.Since(start))
 		if decision == "deny" {
-			h.writeResponse(w, review.Request.UID, false, reason, fmt.Sprintf("image %q rejected: %s", image, reason))
-			return
+			rejectedImage, rejectionReason = image, reason
 		}
+		decisions = append(decisions, imageDecision{image: image, decision: decision, reason: reason})
+		if decision == "deny" {
+			break
+		}
+	}
+
+	if len(decisions) == 0 {
+		decisions = append(decisions, imageDecision{decision: "allow", reason: "valid"})
+	}
+	requestDuration := time.Since(requestStart)
+	for _, result := range decisions {
+		h.logDecision(namespace, p.Metadata.Name, result.image, result.decision, result.reason, requestDuration)
+	}
+
+	if rejectionReason != "" {
+		h.writeResponse(w, review.Request.UID, false, rejectionReason,
+			fmt.Sprintf("image %q rejected: %s", rejectedImage, rejectionReason))
+		return
 	}
 
 	h.writeResponse(w, review.Request.UID, true, "valid", "all Pod images are valid")

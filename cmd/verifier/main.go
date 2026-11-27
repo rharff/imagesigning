@@ -6,6 +6,7 @@ import (
 	"net/http"
 	"os"
 	"strconv"
+	"time"
 
 	"imgsign/pkg/keys"
 	"imgsign/pkg/store"
@@ -25,8 +26,9 @@ func main() {
 	if port == "" {
 		port = "8443"
 	}
-	if _, err := strconv.Atoi(port); err != nil {
-		log.Fatalf("invalid PORT: %v", err)
+	portNumber, err := strconv.Atoi(port)
+	if err != nil || portNumber < 1 || portNumber > 65535 {
+		log.Fatalf("invalid PORT: %q", port)
 	}
 
 	registryStore := store.NewORASStore()
@@ -48,7 +50,14 @@ func main() {
 		_, _ = w.Write([]byte("ok\n"))
 	})
 
-	server := &http.Server{Addr: ":" + port, Handler: mux}
+	server := &http.Server{
+		Addr:              ":" + port,
+		Handler:           mux,
+		ReadHeaderTimeout: 5 * time.Second,
+		ReadTimeout:       15 * time.Second,
+		WriteTimeout:      15 * time.Second,
+		IdleTimeout:       60 * time.Second,
+	}
 	log.Printf("verifier listening on %s", server.Addr)
 	if err := server.ListenAndServeTLS(certFile, keyFile); err != nil {
 		log.Fatal(err)

@@ -195,9 +195,12 @@ func writeNew(path, kind string, data []byte, mode os.FileMode) error {
 	if err != nil {
 		return fmt.Errorf("write %s: %w", path, err)
 	}
-	defer f.Close()
 	if err := pem.Encode(f, &pem.Block{Type: kind, Bytes: data}); err != nil {
+		_ = f.Close()
 		return err
+	}
+	if err := f.Close(); err != nil {
+		return fmt.Errorf("close %s: %w", path, err)
 	}
 	return nil
 }

@@ -10,6 +10,7 @@ import (
 	"net/http"
 	"os"
 	"strings"
+	"sync"
 
 	"github.com/opencontainers/go-digest"
 	specs "github.com/opencontainers/image-spec/specs-go"
@@ -22,6 +23,7 @@ import (
 
 type ORASStore struct {
 	repoCache map[string]*remote.Repository
+	cacheMu   sync.Mutex
 }
 
 func NewORASStore() *ORASStore { return &ORASStore{repoCache: make(map[string]*remote.Repository)} }
@@ -32,6 +34,8 @@ func (s *ORASStore) repository(ref string) (*remote.Repository, registry.Referen
 		return nil, parsed, err
 	}
 	name := parsed.Registry + "/" + parsed.Repository
+	s.cacheMu.Lock()
+	defer s.cacheMu.Unlock()
 	if r := s.repoCache[name]; r != nil {
 		return r, parsed, nil
 	}
